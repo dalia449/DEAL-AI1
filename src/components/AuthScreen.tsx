@@ -3,7 +3,8 @@ import { useI18n } from '../lib/i18n';
 import { DealLogo } from './DealLogo';
 import { heroVilla } from '../data/mockProjects';
 import { UserSession } from '../types';
-import { Mail, Lock, User, ArrowRight, ShieldCheck, CheckCircle2, Globe, AlertCircle, KeyRound } from 'lucide-react';
+import { apiFetch, setStoredSessionToken } from '../lib/api';
+import { Mail, Lock, User, ArrowRight, ShieldCheck, CheckCircle2, Globe, AlertCircle } from 'lucide-react';
 
 interface AuthScreenProps {
   onLoginSuccess: (session: UserSession) => void;
@@ -18,13 +19,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [marketingConsent, setMarketingConsent] = useState(false);
   const [verificationCode, setVerificationCode] = useState('');
   const [newPassword, setNewPassword] = useState('');
 
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [infoMsg, setInfoMsg] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [demoCodeNotice, setDemoCodeNotice] = useState<string | null>(null);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,27 +34,27 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
     setIsSubmitting(true);
 
     try {
-      const res = await fetch('/api/auth/login', {
+      const data = await apiFetch<{
+        success: boolean;
+        user: UserSession;
+        token: string;
+      }>('/api/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ email: email.trim(), password })
       });
-      const data = await res.json();
 
-      if (!res.ok) {
-        if (data.needsVerification) {
-          setDemoCodeNotice(data.demoCode);
-          setMode('verify');
-          setErrorMsg(data.error);
-        } else {
-          setErrorMsg(data.error || 'Login failed. Please check credentials.');
-        }
-        return;
+      if (data.token) {
+        setStoredSessionToken(data.token);
       }
-
       onLoginSuccess(data.user);
     } catch (err: any) {
-      setErrorMsg('Network error connecting to DEAL auth server.');
+      const msg = err.message || 'Login failed. Please check your credentials.';
+      if (msg.includes('verify your email')) {
+        setMode('verify');
+        setInfoMsg('Please verify your email address to activate your account.');
+      } else {
+        setErrorMsg(msg);
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -69,25 +70,30 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
       return;
     }
 
+    if (password.length < 8) {
+      setErrorMsg('Password must be at least 8 characters long.');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
-      const res = await fetch('/api/auth/register', {
+      const data = await apiFetch<{
+        success: boolean;
+        message: string;
+      }>('/api/auth/register', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, password })
+        body: JSON.stringify({
+          name: name.trim(),
+          email: email.trim(),
+          password,
+          marketingConsent
+        })
       });
-      const data = await res.json();
 
-      if (!res.ok) {
-        setErrorMsg(data.error || 'Registration failed.');
-        return;
-      }
-
-      setDemoCodeNotice(data.demoCode);
-      setInfoMsg(data.message);
+      setInfoMsg(data.message || 'Verification code sent to your email.');
       setMode('verify');
     } catch (err: any) {
-      setErrorMsg('Network error connecting to DEAL server.');
+      setErrorMsg(err.message || 'Registration failed.');
     } finally {
       setIsSubmitting(false);
     }
@@ -99,21 +105,41 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
     setIsSubmitting(true);
 
     try {
-      const res = await fetch('/api/auth/verify-email', {
+      const data = await apiFetch<{
+        success: boolean;
+        message: string;
+        user: UserSession;
+        token: string;
+      }>('/api/auth/verify-email', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, code: verificationCode })
+        body: JSON.stringify({
+          email: email.trim(),
+          code: verificationCode.trim()
+        })
       });
-      const data = await res.json();
 
-      if (!res.ok) {
-        setErrorMsg(data.error || 'Verification code invalid.');
-        return;
+      if (data.token) {
+        setStoredSessionToken(data.token);
       }
-
       onLoginSuccess(data.user);
     } catch (err: any) {
-      setErrorMsg('Network error verifying code.');
+      setErrorMsg(err.message || 'Verification failed. Please check the code.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleResendCode = async () => {
+    setErrorMsg(null);
+    setIsSubmitting(true);
+    try {
+      const data = await apiFetch<{ success: boolean; message: string }>('/api/auth/resend-code', {
+        method: 'POST',
+        body: JSON.stringify({ email: email.trim() })
+      });
+      setInfoMsg(data.message || 'Verification code sent to your email.');
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to resend code.');
     } finally {
       setIsSubmitting(false);
     }
@@ -125,23 +151,18 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
     setIsSubmitting(true);
 
     try {
-      const res = await fetch('/api/auth/forgot-password', {
+      const data = await apiFetch<{
+        success: boolean;
+        message: string;
+      }>('/api/auth/forgot-password', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email })
+        body: JSON.stringify({ email: email.trim() })
       });
-      const data = await res.json();
 
-      if (!res.ok) {
-        setErrorMsg(data.error || 'Could not process password reset.');
-        return;
-      }
-
-      setDemoCodeNotice(data.demoCode);
-      setInfoMsg(data.message);
+      setInfoMsg(data.message || 'Password reset code sent to your email.');
       setMode('reset');
     } catch (err: any) {
-      setErrorMsg('Network error.');
+      setErrorMsg(err.message || 'Could not process password reset request.');
     } finally {
       setIsSubmitting(false);
     }
@@ -152,36 +173,33 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
     setErrorMsg(null);
     setIsSubmitting(true);
 
+    if (newPassword.length < 8) {
+      setErrorMsg('Password must be at least 8 characters long.');
+      setIsSubmitting(false);
+      return;
+    }
+
     try {
-      const res = await fetch('/api/auth/reset-password', {
+      const data = await apiFetch<{
+        success: boolean;
+        message: string;
+      }>('/api/auth/reset-password', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, code: verificationCode, newPassword })
+        body: JSON.stringify({
+          email: email.trim(),
+          code: verificationCode.trim(),
+          newPassword
+        })
       });
-      const data = await res.json();
 
-      if (!res.ok) {
-        setErrorMsg(data.error || 'Reset failed.');
-        return;
-      }
-
-      setInfoMsg(data.message);
+      setInfoMsg(data.message || 'Password successfully updated. You can now sign in.');
       setMode('login');
+      setPassword('');
+      setVerificationCode('');
     } catch (err: any) {
-      setErrorMsg('Network error.');
+      setErrorMsg(err.message || 'Reset failed.');
     } finally {
       setIsSubmitting(false);
-    }
-  };
-
-  // Quick Demo Access for Committee & Judges
-  const quickDemoLogin = (role: 'engineer' | 'owner') => {
-    if (role === 'owner') {
-      setEmail('dalia.alwaqtan@deal-architecture.com');
-      setPassword('DealArch2026!');
-    } else {
-      setEmail('engineer@deal.com');
-      setPassword('Engineer2026!');
     }
   };
 
@@ -215,7 +233,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
             "DEAL transforms traditional architectural friction into an accelerated digital synthesis. Engineers guide the intent; AI analyzes boundaries, microclimate, and spatial harmonics."
           </p>
           <div className="mt-4 pt-3 border-t border-[#FAF7F2]/20 flex items-center justify-between text-[11px] text-[#D8CEC2]">
-            <span>Founder & Owner: Dalia Al Waqtan</span>
+            <span>Architectural Engineering Platform</span>
             <span>Riyadh · Jeddah · Gulf Region</span>
           </div>
         </div>
@@ -272,19 +290,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
             </div>
           )}
 
-          {demoCodeNotice && (
-            <div className="mb-4 p-3 bg-[#EFE6DA] border border-[#D8CEC2] text-[#54483C] rounded text-xs flex items-center justify-between">
-              <span>Verification Code: <strong className="font-mono text-sm tracking-widest">{demoCodeNotice}</strong></span>
-              <button
-                type="button"
-                onClick={() => setVerificationCode(demoCodeNotice)}
-                className="text-[11px] underline font-semibold"
-              >
-                Auto-Fill
-              </button>
-            </div>
-          )}
-
           {/* LOGIN FORM */}
           {mode === 'login' && (
             <form onSubmit={handleLogin} className="space-y-4 text-xs">
@@ -297,7 +302,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="architect@domain.com"
+                    placeholder="name@domain.com"
                     className="w-full bg-[#FAF7F2] border border-[#D8CEC2] rounded pl-9 pr-3 py-2 text-xs text-[#3F3832] focus:outline-none focus:border-[#54483C]"
                   />
                 </div>
@@ -308,7 +313,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                   <label className="text-[#756A60] font-medium">{t('password')}</label>
                   <button
                     type="button"
-                    onClick={() => { setErrorMsg(null); setMode('forgot'); }}
+                    onClick={() => { setErrorMsg(null); setInfoMsg(null); setMode('forgot'); }}
                     className="text-[11px] text-[#8A7A6A] hover:text-[#54483C]"
                   >
                     {t('forgotPassword')}
@@ -336,34 +341,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
 
-              {/* Quick Demo Pre-sets for Judging Committee */}
-              <div className="pt-4 border-t border-[#D8CEC2] text-center">
-                <span className="text-[11px] text-[#756A60] block mb-2">
-                  Judging Committee Quick Demo Access:
-                </span>
-                <div className="flex items-center justify-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => quickDemoLogin('engineer')}
-                    className="px-3 py-1 bg-[#EFE6DA] text-[#54483C] border border-[#D8CEC2] rounded text-[11px] hover:bg-[#D8CEC2]"
-                  >
-                    Architect Login
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => quickDemoLogin('owner')}
-                    className="px-3 py-1 bg-[#EFE6DA] text-[#54483C] border border-[#D8CEC2] rounded text-[11px] hover:bg-[#D8CEC2]"
-                  >
-                    Dalia Al Waqtan (Owner)
-                  </button>
-                </div>
-              </div>
-
-              <div className="text-center text-xs pt-2 text-[#756A60]">
+              <div className="text-center text-xs pt-4 text-[#756A60] border-t border-[#D8CEC2]">
                 {t('dontHaveAccount')}{' '}
                 <button
                   type="button"
-                  onClick={() => { setErrorMsg(null); setMode('register'); }}
+                  onClick={() => { setErrorMsg(null); setInfoMsg(null); setMode('register'); }}
                   className="font-semibold text-[#54483C] hover:underline"
                 >
                   {t('createAccount')}
@@ -374,29 +356,35 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
 
           {/* REGISTER FORM */}
           {mode === 'register' && (
-            <form onSubmit={handleRegister} className="space-y-3 text-xs">
+            <form onSubmit={handleRegister} className="space-y-3.5 text-xs">
               <div>
                 <label className="text-[#756A60] font-medium block mb-1">{t('fullName')}</label>
-                <input
-                  type="text"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Eng. Sarah Al-Otaibi"
-                  className="w-full bg-[#FAF7F2] border border-[#D8CEC2] rounded px-3 py-2 text-xs focus:outline-none focus:border-[#54483C]"
-                />
+                <div className="relative">
+                  <User className="w-4 h-4 text-[#8A7A6A] absolute left-3 top-2.5 pointer-events-none" />
+                  <input
+                    type="text"
+                    required
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Your Full Name"
+                    className="w-full bg-[#FAF7F2] border border-[#D8CEC2] rounded pl-9 pr-3 py-2 text-xs focus:outline-none focus:border-[#54483C]"
+                  />
+                </div>
               </div>
 
               <div>
                 <label className="text-[#756A60] font-medium block mb-1">{t('emailAddress')}</label>
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="architect@domain.com"
-                  className="w-full bg-[#FAF7F2] border border-[#D8CEC2] rounded px-3 py-2 text-xs focus:outline-none focus:border-[#54483C]"
-                />
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-[#8A7A6A] absolute left-3 top-2.5 pointer-events-none" />
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="name@domain.com"
+                    className="w-full bg-[#FAF7F2] border border-[#D8CEC2] rounded pl-9 pr-3 py-2 text-xs focus:outline-none focus:border-[#54483C]"
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-2">
@@ -405,9 +393,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                   <input
                     type="password"
                     required
+                    minLength={8}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••"
+                    placeholder="Min 8 characters"
                     className="w-full bg-[#FAF7F2] border border-[#D8CEC2] rounded px-3 py-2 text-xs focus:outline-none focus:border-[#54483C]"
                   />
                 </div>
@@ -416,16 +405,31 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                   <input
                     type="password"
                     required
+                    minLength={8}
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="••••••••"
+                    placeholder="Repeat password"
                     className="w-full bg-[#FAF7F2] border border-[#D8CEC2] rounded px-3 py-2 text-xs focus:outline-none focus:border-[#54483C]"
                   />
                 </div>
               </div>
 
-              <p className="text-[10px] text-[#756A60] leading-relaxed">
-                By registering, a 6-digit confirmation code will be dispatched to verify your architectural engineer credentials.
+              {/* Marketing Consent Optional Checkbox */}
+              <div className="pt-1 flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  id="marketingConsent"
+                  checked={marketingConsent}
+                  onChange={(e) => setMarketingConsent(e.target.checked)}
+                  className="mt-0.5 accent-[#54483C] rounded border-[#D8CEC2]"
+                />
+                <label htmlFor="marketingConsent" className="text-[11px] text-[#756A60] cursor-pointer leading-tight">
+                  Send me DEAL product updates and announcements (optional).
+                </label>
+              </div>
+
+              <p className="text-[10px] text-[#756A60] leading-relaxed pt-1">
+                A 6-digit confirmation code will be dispatched to verify your email address before platform access is granted.
               </p>
 
               <button
@@ -437,11 +441,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
 
-              <div className="text-center text-xs pt-2 text-[#756A60]">
+              <div className="text-center text-xs pt-3 text-[#756A60] border-t border-[#D8CEC2]">
                 {t('alreadyHaveAccount')}{' '}
                 <button
                   type="button"
-                  onClick={() => { setErrorMsg(null); setMode('login'); }}
+                  onClick={() => { setErrorMsg(null); setInfoMsg(null); setMode('login'); }}
                   className="font-semibold text-[#54483C] hover:underline"
                 >
                   {t('signIn')}
@@ -453,9 +457,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
           {/* VERIFY EMAIL CODE FORM */}
           {mode === 'verify' && (
             <form onSubmit={handleVerifyEmail} className="space-y-4 text-xs">
-              <p className="text-xs text-[#756A60] text-center">
-                Please enter the 6-digit code dispatched to <strong>{email}</strong>.
-              </p>
+              <div className="bg-[#EFE6DA] p-3 rounded border border-[#D8CEC2] text-center">
+                <span className="text-[#756A60] block text-[11px]">Verification Code Dispatched to:</span>
+                <strong className="text-[#3F3832] font-semibold">{email}</strong>
+              </div>
 
               <div>
                 <label className="text-[#756A60] font-medium block mb-1 text-center">{t('enterCode')}</label>
@@ -465,8 +470,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                   maxLength={6}
                   value={verificationCode}
                   onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, ''))}
-                  placeholder="123456"
-                  className="w-full text-center tracking-[0.5em] font-mono font-bold text-lg bg-[#FAF7F2] border border-[#D8CEC2] rounded py-2.5 text-[#3F3832] focus:outline-none focus:border-[#54483C]"
+                  placeholder="------"
+                  className="w-full text-center tracking-[0.6em] font-mono font-bold text-lg bg-[#FAF7F2] border border-[#D8CEC2] rounded py-2.5 text-[#3F3832] focus:outline-none focus:border-[#54483C]"
                 />
               </div>
 
@@ -479,11 +484,18 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                 <span>{isSubmitting ? 'Validating...' : t('verifyEmail')}</span>
               </button>
 
-              <div className="text-center pt-2">
+              <div className="flex items-center justify-between text-xs pt-2">
                 <button
                   type="button"
-                  onClick={() => setMode('login')}
-                  className="text-xs text-[#8A7A6A] hover:text-[#54483C]"
+                  onClick={handleResendCode}
+                  className="text-[#8A7A6A] hover:text-[#54483C] underline"
+                >
+                  {t('resendCode')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setErrorMsg(null); setInfoMsg(null); setMode('login'); }}
+                  className="text-[#8A7A6A] hover:text-[#54483C]"
                 >
                   {t('backToLogin')}
                 </button>
@@ -495,18 +507,21 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
           {mode === 'forgot' && (
             <form onSubmit={handleForgotPassword} className="space-y-4 text-xs">
               <p className="text-xs text-[#756A60]">
-                Enter your registered email address to receive a secure recovery code.
+                Enter your registered email address. A secure recovery code will be dispatched to your inbox.
               </p>
               <div>
                 <label className="text-[#756A60] font-medium block mb-1">{t('emailAddress')}</label>
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="architect@domain.com"
-                  className="w-full bg-[#FAF7F2] border border-[#D8CEC2] rounded px-3 py-2 text-xs focus:outline-none focus:border-[#54483C]"
-                />
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-[#8A7A6A] absolute left-3 top-2.5 pointer-events-none" />
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="name@domain.com"
+                    className="w-full bg-[#FAF7F2] border border-[#D8CEC2] rounded pl-9 pr-3 py-2 text-xs focus:outline-none focus:border-[#54483C]"
+                  />
+                </div>
               </div>
 
               <button
@@ -514,13 +529,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                 disabled={isSubmitting}
                 className="w-full py-2.5 bg-[#54483C] text-[#FAF7F2] rounded text-xs font-semibold hover:bg-[#3F3832] transition-colors"
               >
-                Send Reset Code
+                {isSubmitting ? 'Sending Code...' : 'Send Recovery Code'}
               </button>
 
-              <div className="text-center">
+              <div className="text-center pt-2">
                 <button
                   type="button"
-                  onClick={() => setMode('login')}
+                  onClick={() => { setErrorMsg(null); setInfoMsg(null); setMode('login'); }}
                   className="text-xs text-[#8A7A6A] hover:text-[#54483C]"
                 >
                   {t('backToLogin')}
@@ -531,16 +546,17 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
 
           {/* RESET PASSWORD FORM */}
           {mode === 'reset' && (
-            <form onSubmit={handleResetPassword} className="space-y-3 text-xs">
+            <form onSubmit={handleResetPassword} className="space-y-3.5 text-xs">
               <div>
                 <label className="text-[#756A60] font-medium block mb-1">6-Digit Reset Code</label>
                 <input
                   type="text"
                   required
+                  maxLength={6}
                   value={verificationCode}
-                  onChange={(e) => setVerificationCode(e.target.value)}
-                  placeholder="123456"
-                  className="w-full font-mono text-center tracking-widest bg-[#FAF7F2] border border-[#D8CEC2] rounded px-3 py-2 text-xs"
+                  onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, ''))}
+                  placeholder="------"
+                  className="w-full font-mono text-center tracking-[0.5em] font-bold text-base bg-[#FAF7F2] border border-[#D8CEC2] rounded px-3 py-2 text-xs"
                 />
               </div>
 
@@ -549,25 +565,26 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                 <input
                   type="password"
                   required
+                  minLength={8}
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="••••••••••••"
+                  placeholder="Min 8 characters"
                   className="w-full bg-[#FAF7F2] border border-[#D8CEC2] rounded px-3 py-2 text-xs"
                 />
               </div>
 
               <button
                 type="submit"
-                disabled={isSubmitting}
+                disabled={isSubmitting || verificationCode.length < 6}
                 className="w-full py-2.5 bg-[#54483C] text-[#FAF7F2] rounded text-xs font-semibold hover:bg-[#3F3832]"
               >
-                {t('resetPasswordBtn')}
+                {isSubmitting ? 'Updating...' : t('resetPasswordBtn')}
               </button>
 
-              <div className="text-center">
+              <div className="text-center pt-2">
                 <button
                   type="button"
-                  onClick={() => setMode('login')}
+                  onClick={() => { setErrorMsg(null); setInfoMsg(null); setMode('login'); }}
                   className="text-xs text-[#8A7A6A] hover:text-[#54483C]"
                 >
                   {t('backToLogin')}
@@ -579,7 +596,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
 
         {/* Footer */}
         <div className="text-center text-[10px] text-[#756A60] border-t border-[#D8CEC2] pt-4">
-          DEAL Platform © 2026 · Design • Engineering • Architecture • Living · All Rights Reserved
+          DEAL Platform © 2026 · Design • Engineering • Architecture • Living · Production Architecture
         </div>
       </div>
     </div>
