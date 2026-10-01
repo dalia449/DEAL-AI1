@@ -1,0 +1,86 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --deal-ivory: #F6EFE5;
+    --deal-cream: #EFE6DA;
+    --deal-card: #FAF7F2;
+    --deal-brown: #54483C;
+    --deal-dark: #3F3832;
+    --deal-secondary: #756A60;
+    --deal-border: #D8CEC2;
+    --deal-divider: #E5DDD3;
+    --deal-accent-light: #8A7A6A;
+    --deal-accent-beige: #D9CBBE;
+  }
+
+  body {
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background-color: var(--deal-ivory);
+    color: var(--deal-dark);
+  }
+
+  [dir="rtl"] body, [dir="rtl"] {
+    font-family: 'IBM Plex Sans Arabic', 'Plus Jakarta Sans', sans-serif;
+  }
+}
+
+.font-serif-arch {
+  font-family: 'Cinzel', Georgia, serif;
+}
+
+.font-sans-arch {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+}
+
+.font-arabic-arch {
+  font-family: 'IBM Plex Sans Arabic', sans-serif;
+}
+
+/* Custom architectural scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #F6EFE5;
+}
+::-webkit-scrollbar-thumb {
+  background: #D8CEC2;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #8A7A6A;
+}
+
+/* Blueprint / Grid backgrounds */
+.bg-cad-grid {
+  background-size: 24px 24px;
+  background-image: 
+    linear-gradient(to right, rgba(84, 72, 60, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(84, 72, 60, 0.06) 1px, transparent 1px);
+}
+
+.bg-cad-grid-dark {
+  background-size: 20px 20px;
+  background-image: 
+    linear-gradient(to right, rgba(246, 239, 229, 0.08) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(246, 239, 229, 0.08) 1px, transparent 1px);
+}
+
+/* Print Layout */
+@media print {
+  body {
+    background-color: white !important;
+    color: #111 !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+  .page-break {
+    page-break-before: always;
+  }
+}

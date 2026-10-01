@@ -1,0 +1,10 @@
+{
+  "name": "DEAL - Architectural & Engineering 3D Design Platform",
+  "description": "DEAL (Design • Engineering • Architecture • Living) is an AI-powered architectural design platform transforming sketches, land data, voice, and hand tracking into interactive 3D designs.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
